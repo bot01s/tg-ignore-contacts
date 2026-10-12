@@ -98,6 +98,22 @@ at `/usr/src/tdesktop` and links those libraries statically.
   missing or the superproject Dockerfile changed; ask the user first when
   unsure. Confirm the daemon with `docker info` before building or compiling.
 
+- **The checked-in `Dockerfile` is a Jinja template, not a buildable file.**
+  Building it directly fails with `gcc: unrecognized debug output level 'z{%'`
+  because the `{% if ... %}` markers leak into `CFLAGS`. When `poetry` is not
+  installed, render it yourself and build the rendered file instead:
+
+  ```bash
+  cd "$REPO/Telegram/build/docker/centos_env"
+  python3 gen_dockerfile.py > /tmp/tdesktop-centos_env.Dockerfile
+  DOCKER_BUILDKIT=1 docker build -t tdesktop:centos_env \
+    -f /tmp/tdesktop-centos_env.Dockerfile .
+  ```
+
+  `gen_dockerfile.py` needs `jinja2` (`pip3 install --user jinja2`). The
+  rendered file has no `COPY`/`ADD` from the build context, so the context
+  directory does not matter.
+
 ### 4. Report what was done
 
 Say concisely whether the checkout was cloned, fast-forwarded or left
@@ -117,6 +133,35 @@ Before building, check the credentials file exists (`~/.tdesktop-api.txt`, see
 **API credentials**). **If it is missing, stop and ask the user for the real
 `api_id`/`api_hash`** and tell them to put them into `~/.tdesktop-api.txt`
 themselves; do not proceed and do not fall back to the test credentials.
+
+## Repository skills
+
+The checkout carries its own agent skills under `$REPO/.agents/skills/`. They
+are part of the repository, not of this skill, and they encode the project's
+own workflows. **Read and follow them whenever the task falls into their
+domain** - do not re-invent their steps from this file.
+
+- `$REPO/.agents/skills/rebase/SKILL.md` - intent-aware rebase of the current
+  checkout. Use it whenever the user asks to rebase, port or re-apply this
+  feature onto a new base, or to continue/abort an in-progress rebase, instead
+  of resolving conflicts by hand.
+- `$REPO/.agents/skills/perform-task/SKILL.md` - implement, review, test and
+  publish exactly one existing `ai-tdesktop` task. Use it when the work is
+  owned by a queue task (see `AGENTS.md`), not for an ordinary conversational
+  request.
+- `$REPO/.agents/skills/continue/SKILL.md` - the checkout-level scheduler that
+  drains the AI queue. Use it when the user asks to continue autonomous work.
+- `$REPO/.agents/skills/process-inbox/SKILL.md` - triage the ignored
+  `ai-tdesktop/inbox/inbox.md` into task records. Planning only, never
+  implementation.
+- `$REPO/.agents/skills/dependency-watch/SKILL.md` - audit dependencies of
+  `origin/dev`. Advisory only; it does not build or commit.
+
+Shared references live in `$REPO/.agents/shared/` (for example
+`build-lock-recovery.md`, `phase-effort.md`, `test-loop.md`); the skills above
+link to them and expect them to be read when they say so. `AGENTS.md` remains
+the authority on style, commits and the AI-task queue; these skills are the
+procedures that operate on top of it.
 
 ## Behavior spec
 
@@ -146,7 +191,10 @@ First run **Prepare the checkout** above. Then implement the feature below in
 this checkout. Work through the numbered steps in order, search for each quoted
 anchor, make exactly the described change, and do not touch anything else.
 Follow `AGENTS.md` (tabs, no new comments beyond one short line, `auto`, `_q`
-literals, no hardcoded sizes, no `Q_OS_LINUX`).
+literals, no hardcoded sizes, no `Q_OS_LINUX`). If the work is owned by an
+`ai-tdesktop` queue task, drive it through `$REPO/.agents/skills/perform-task`
+(see **Repository skills**); if the user asks to port or re-apply the feature
+onto a new base, use `$REPO/.agents/skills/rebase`.
 
 ### 1. Create `Telegram/SourceFiles/core/core_ignore.h` and `core_ignore.cpp`
 
